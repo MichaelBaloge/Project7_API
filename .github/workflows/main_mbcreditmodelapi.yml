@@ -26,8 +26,6 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          apt update
-          apt-get install -y libgomp1
       
       - name: Install dependencies
         run: pip install -r requirements.txt
