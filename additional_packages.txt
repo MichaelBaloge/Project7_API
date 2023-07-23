@@ -1,3 +1,0 @@
-# Additional packages in order to get libraries which are described in necessary_libraries.txt
-libgomp1
-
