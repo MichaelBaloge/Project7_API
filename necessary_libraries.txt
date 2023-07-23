@@ -1,2 +1,0 @@
-# Necessary libraries needed to make pip modules work fine.
-libgomp.so.1
