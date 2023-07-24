@@ -54,7 +54,7 @@ jobs:
           name: python-app
           path: .
       - name: Solve LGBM Problem
-        run: apt update && apt-get install -y libgomp1
+        run: sudo apt update && sudo apt-get install -y libgomp1
           
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v2
