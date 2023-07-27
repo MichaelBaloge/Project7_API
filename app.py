@@ -5,12 +5,13 @@ from lightgbm import LGBMClassifier
 import lime
 from lime.lime_tabular import LimeTabularExplainer
 
+# Initialisation de l'API
 app = Flask(__name__)
 
-train = pd.read_csv('new_train.csv')
-test = pd.read_csv('application_test.csv')
-pipeline = joblib.load('model.joblib')
 
+### Chargement des données ###
+
+# Import des features utilisées dans la modélisation
 features = ['NAME_CONTRACT_TYPE', 'CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALTY',
        'NAME_TYPE_SUITE', 'NAME_INCOME_TYPE', 'NAME_EDUCATION_TYPE',
        'NAME_FAMILY_STATUS', 'NAME_HOUSING_TYPE', 'OCCUPATION_TYPE',
@@ -37,58 +38,92 @@ features = ['NAME_CONTRACT_TYPE', 'CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALT
        'AMT_REQ_CREDIT_BUREAU_WEEK', 'AMT_REQ_CREDIT_BUREAU_MON',
        'AMT_REQ_CREDIT_BUREAU_QRT', 'AMT_REQ_CREDIT_BUREAU_YEAR']
 
+# Import des données et du modèle
+train = pd.read_csv('new_train.csv')
+test = pd.read_csv('application_test.csv')
+pipeline = joblib.load('model.joblib')
+
+# Séparation des colonnes numériques et catégorielles pour les graphiques
+num = test.select_dtypes(exclude='object').columns
+cat = test.select_dtypes(include='object').columns
+num_col = list(set(num).intersection(features))
+cat_col = list(set(cat).intersection(features))
+
+# Explainer Lime pour l'explicabilité locale
 explainer = LimeTabularExplainer(pipeline[0].transform(train[features]), 
                                                        feature_names=features, 
                                                        class_names=['0', '1'], 
                                                        verbose=True)
 
+# Affichage par défaut sur l'url de l'API pour premier contrôle
 @app.route('/', methods=['GET'])
 def ok():
     return 'ok'
 
+# Route pour obtenir les id des clients sous forme de dataframe
+@app.route('/reflist', methods=['GET'])
+def client_ids():
+    return jsonify(test[['SK_ID_CURR']].to_json(orient = 'split'))
 
+# Route pour obtenir les features par type sous forme de listes
+@app.route('/features', methods=['GET'])
+def features_list():
+    response = {
+        'num' : num_col,
+        'cat' : cat_col
+    }
+    return jsonify(response)
+
+# Route pour obtenir les informations du client sélectionné sous forme de dataframe
+@app.route('/clientinfo', methods=['POST'])
+def client_info():
+    # obtention de l'id du client sélectionné
+    id_number = request.json['data']
+    return jsonify(test.loc[test['SK_ID_CURR']==id_number, features + ['SK_ID_CURR']].to_json(orient = 'split'))
+
+# Route pour obtenir les informations de prédictions et d'explicabilité pour le client sélectionné
 @app.route('/predict', methods=['POST'])
 def predict():
-    # Get the row number from the request
     id_number = request.json['data']
+    data = test[test['SK_ID_CURR']==id_number][features]
 
-    # Fetch the data for the specified row number
-    # Replace this with your own code to fetch the data for the specified row
-    data = test.loc[test['SK_ID_CURR']==id_number][features]
-
-    # Perform prediction using the ref home credit model
+    # Prédiction
     threshold = 0.5157
     prediction_proba = pipeline.predict_proba(data)[:, 1]  
     prediction = (prediction_proba >= threshold).astype(int)
 
-    # Generate local feature importance with LIME
+    # Explicabilité locale avec Lime
     transform_data = pipeline[0].transform(data)
     lime_explanation = explainer.explain_instance(transform_data[0], pipeline[1].predict_proba, num_features=20)
 
-    # Extract feature importance values
+    # Extraction des features importances
     feature_importance = {}
     for feature, importance in lime_explanation.as_list():
         feature_importance[feature] = importance
 
-    # Determine the gauge based on the prediction value
+    # Information d'aide à la décision
     gauge = 'Credit pouvant être accepté' if prediction == 0 else 'Credit refusé'
-
-    # Prepare the response
+        
+    # Réponse
     response = {
         'prediction': prediction.tolist(),
         'prob' : prediction_proba.tolist(),
         'feature_importance': feature_importance,
-        'gauge': gauge,
-        'transform_data' : transform_data.tolist()
+        'gauge': gauge
     }
 
     return jsonify(response)
 
+# Route pour obtenir les informations générales des clients de référence afin de tracer les graphs correspondants (liste de features voulues)
+@app.route('/featureinfo', methods=['POST'])
+def feature_info():
+    feat = request.json['data']
+    return jsonify(train[feat + ['proba', 'TARGET']].to_json(orient = 'split'))
 
 # Route pour mettre à jour les données du client
 @app.route('/update', methods=['POST'])
 def update_client_data():
-    # Récupérer les nouvelles données du client depuis la requête POST
+    # Récupérer les nouvelles données du client (dictionnaire de features)
     updated_data = request.json['data']
     client_id = updated_data['client_id']
 
@@ -97,36 +132,30 @@ def update_client_data():
     for feat in updated_data.keys():
         update.loc[update['SK_ID_CURR'] == client_id, feat] = updated_data[feat]
 
-    # Utilisez le DataFrame "update" au lieu de "data" pour effectuer la prédiction
+    # Utilisez le DataFrame "update" au lieu de "data" pour effectuer la prédiction comme pour la route /predict
     data = update.loc[update['SK_ID_CURR'] == client_id][features]
     
     threshold = 0.5157
     prediction_proba = pipeline.predict_proba(data)[:, 1]
     prediction = (prediction_proba >= threshold).astype(int)
 
-    # Generate local feature importance with LIME
     transform_data = pipeline[0].transform(data)
     lime_explanation = explainer.explain_instance(transform_data[0], pipeline[1].predict_proba, num_features=20)
 
-    # Extract feature importance values
     feature_importance = {}
     for feature, importance in lime_explanation.as_list():
         feature_importance[feature] = importance
 
-    # Determine the gauge based on the prediction value
     gauge = 'Credit pouvant être accepté' if prediction == 0 else 'Credit refusé'
 
-    # Prepare the response
     response = {
         'prediction': prediction.tolist(),
         'prob': prediction_proba.tolist(),
         'feature_importance': feature_importance,
-        'gauge': gauge,
-        'transform_data': transform_data.tolist()
+        'gauge': gauge
     }
 
     return jsonify(response)
-
 
 
 if __name__ == '__main__':
