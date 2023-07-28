@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import pandas as pd
 import joblib
 from lightgbm import LGBMClassifier
@@ -73,6 +73,11 @@ def features_list():
         'cat' : cat_col
     }
     return jsonify(response)
+
+# Route pour obtenir l'image de l'explicabilité globale
+@app.route('/shap', methods=['GET'])
+def explain_img():
+    return send_file('glob_exp.png')
 
 # Route pour obtenir les informations du client sélectionné sous forme de dataframe
 @app.route('/clientinfo', methods=['POST'])
